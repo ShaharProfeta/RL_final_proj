@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Congratulations!</title>
+  <style>
+    /* רקע גרדיאנט */
+    body {
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: linear-gradient(to bottom right, #0f172a, #5b21b6, #0f172a);
+      overflow: hidden;
+      color: white;
+      font-family: Arial, sans-serif;
+    }
+    .container {
+      position: relative;
+      z-index: 10;
+      max-width: 800px;
+      text-align: center;
+      padding: 20px;
+    }
+
+    h1 {
+      font-size: 3rem;
+      margin: .5em 0 .2em;
+      background: linear-gradient(90deg, #facc15, #a855f7, #ec4899);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    h2 { font-size: 1.5rem; margin-bottom: .5em; }
+    h3 { font-size: 2rem; color: #facc15; margin-bottom: 1em; }
+
+    /* רקע הנקודות הנופלות */
+    .dot {
+      position: absolute;
+      width: 6px; height: 6px;
+      background: #facc15;
+      border-radius: 50%;
+      opacity: .7;
+      animation: drop 3s linear infinite;
+    }
+    @keyframes drop {
+      0%   { transform: translateY(-20px) }
+      100% { transform: translateY(110vh) }
+    }
+
+    /* glowing orbs */
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(50px);
+      opacity: .2;
+      animation: pulse 3s ease-in-out infinite alternate;
+    }
+    @keyframes pulse {
+      from { transform: scale(1) }
+      to   { transform: scale(1.2) }
+    }
+    .orb.purple { width: 200px; height: 200px; background: #a855f7; top: 10%; left: 10%; }
+    .orb.yellow { width: 250px; height: 250px; background: #facc15; bottom: 10%; right: 10%; }
+    .orb.blue   { width: 150px; height: 150px; background: #3b82f6; top: 50%; left: 50%; }
+
+    /* Room cards */
+    .rooms { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1rem; margin: 2rem 0; }
+    .room {
+      background: rgba(0,0,0,.4);
+      padding: 1rem;
+      border: 2px solid rgba(168,85,247,.5);
+      border-radius: 8px;
+      position: relative;
+    }
+    .room .check {
+      position: absolute;
+      top: 8px; right: 8px;
+      font-size: 1.5rem;
+      color: #34d399;
+      transform: scale(0);
+      transition: transform .3s ease;
+    }
+    .room.done .check {
+      transform: scale(1);
+    }
+
+    /* Achievement stats */
+    .stats {
+      display: flex; justify-content: center; gap: 2rem;
+      margin-bottom: 2rem;
+    }
+    .stat {
+      text-align: center;
+    }
+    .stat .icon {
+      width: 48px; height: 48px;
+      margin: 0 auto .5rem;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(168,85,247,.2);
+      border-radius: 50%;
+    }
+    .stat .icon.star { background: rgba(252,205,21,.2); }
+    .stat .icon.clock { background: rgba(59,130,246,.2); }
+    .stat .icon.trophy { background: rgba(251,146,60,.2); }
+
+    /* Success message & button */
+    .message { max-width: 600px; margin: 2rem auto; line-height: 1.5; color: #d1d5db; }
+    .btn {
+      display: inline-block;
+      background: linear-gradient(90deg, #7c3aed, #ec4899);
+      color: white;
+      padding: 1rem 2rem;
+      border: none; border-radius: 12px;
+      font-size: 1.25rem; font-weight: bold;
+      text-decoration: none;
+      transition: transform .2s;
+    }
+    .btn:hover { transform: scale(1.05) }
+
+    /* Decorative line */
+    .decor { display:flex; align-items:center; justify-content:center; gap:.5rem; margin-top:2rem; color: #9ca3af; }
+    .decor .line { flex:1; height:1px; background: currentColor }
+  </style>
+</head>
+<body>
+
+  <!-- Animated background dots -->
+  <script>
+    for (let i = 0; i < 20; i++) {
+      const d = document.createElement('div');
+      d.className = 'dot';
+      d.style.left = Math.random() * 100 + 'vw';
+      d.style.animationDelay = Math.random() * 2 + 's';
+      d.style.animationDuration = 2 + Math.random() * 2 + 's';
+      document.body.appendChild(d);
+    }
+  </script>
+
+  <!-- Glowing orbs -->
+  <div class="orb purple"></div>
+  <div class="orb yellow"></div>
+  <div class="orb blue"></div>
+
+  <div class="container">
+    <h1>CONGRATULATIONS!</h1>
+    <h2>You've Escaped</h2>
+    <h3>BENNY IN RUPPIN WORLD</h3>
+
+    <!-- Trophy -->
+    <div style="font-size:4rem; margin-bottom:1rem; animation: trophyAnim 1s ease-out forwards;">
+      🏆
+    </div>
+    <style>
+      @keyframes trophyAnim {
+        from { transform: scale(0) rotate(-180deg); opacity:0 }
+        to   { transform: scale(1) rotate(0deg); opacity:1 }
+      }
+    </style>
+
+    <!-- Rooms -->
+    <div class="rooms" id="rooms">
+      <div class="room"><span class="check">✔️</span><strong>Room 1</strong><br><small>Complete</small></div>
+      <div class="room"><span class="check">✔️</span><strong>Room 2</strong><br><small>Complete</small></div>
+      <div class="room"><span class="check">✔️</span><strong>Room 3</strong><br><small>Complete</small></div>
+      <div class="room"><span class="check">✔️</span><strong>Room 4</strong><br><small>Complete</small></div>
+    </div>
+
+    <!-- Achievement stats -->
+    <div class="stats">
+      <div class="stat">
+        <div class="icon star">⭐</div>
+        <div style="font-size:2rem; font-weight:bold;">4/4</div>
+        <div style="font-size:.9rem; color:#d1d5db;">Rooms</div>
+      </div>
+      <div class="stat">
+        <div class="icon clock">⏰</div>
+        <div style="font-size:2rem; font-weight:bold;">Epic</div>
+        <div style="font-size:.9rem; color:#d1d5db;">Time</div>
+      </div>
+      <div class="stat">
+        <div class="icon trophy">🏆</div>
+        <div style="font-size:2rem; font-weight:bold;">100%</div>
+        <div style="font-size:.9rem; color:#d1d5db;">Success</div>
+      </div>
+    </div>
+
+    <!-- Success message -->
+    <div class="message">
+      Amazing work! You've successfully navigated through all four challenging rooms and conquered the mysteries of Ruppin World. Your problem-solving skills and determination have led you to victory!
+    </div>
+
+    <!-- Return button -->
+    <a href="../opening_page/index.html" class="btn">🏠 Return to Main Page</a>
+
+    <!-- Decorative line -->
+    <div class="decor">
+      <div class="line"></div><span>★</span><div class="line"></div>
+    </div>
+  </div>
+
+  <script>
+    // אנימציית בדיקת השלמת חדרים
+    let currentStep = 0;
+    const rooms = document.querySelectorAll('#rooms .room');
+    const interval = setInterval(() => {
+      if (currentStep < rooms.length) {
+        rooms[currentStep].classList.add('done');
+        currentStep++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 800);
+  </script>
+</body>
+</html>

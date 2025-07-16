@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RL Escape Room</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 20px;
+        }
+        
+        #gameCanvas {
+            border: 2px solid #333;
+            background-color: white;
+            margin: 20px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        button:active {
+            background-color: #3d8b40;
+        }
+    </style>
+</head>
+<body>
+    <h1>RL Escape Room</h1>
+    <div id="training-stats" style="margin-bottom: 10px; font-family: Arial, sans-serif;">
+        <span style="margin-right: 20px;">Iterations: <span id="iterations-count" style="font-weight: bold;">0</span></span>
+        <span>Policy Improvements: <span id="improvements-count" style="font-weight: bold;">0</span></span>
+    </div>
+    <canvas id="gameCanvas" width="600" height="600"></canvas>
+    <div class="settings" style="margin-bottom: 10px; display: flex; gap: 20px; align-items: center;">
+        <label for="gammaInput">Discount Factor (γ):</label>
+        <input id="gammaInput" type="number" min="0.5" max="0.99" step="0.01" value="0.9" style="width: 60px;">
+        <label for="maxStepsInput">Max Steps per Episode:</label>
+        <input id="maxStepsInput" type="number" min="10" max="200" step="1" value="50" style="width: 60px;">
+    </div>
+    <div class="controls">
+        <button id="startTraining">Start Training</button>
+        <button id="showValues">Show Values</button>
+        <button id="showBest">Show Best Run</button>
+        <button id="showRandomFailed">Show Random Failed Run</button>
+    </div>
+    
+    <script src="environment.js"></script>
+    <script src="agent.js"></script>
+    <script src="main.js"></script>
+</body>
+</html> 

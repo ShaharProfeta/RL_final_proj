@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pac-Man Hierarchical DQN - 3 Models</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background: #f0f0f0; display: flex; flex-direction: column; align-items: center; }
+        #controls { margin: 10px; }
+        #grid { display: grid; grid-template-columns: repeat(10, 48px); grid-template-rows: repeat(10, 48px); gap: 2px; margin: 10px; position: relative; }
+        .cell { width: 48px; height: 48px; background: #fff; border: 1px solid #eee; }
+        .wall { background: #333; }
+        .pellet { background: #fff; border-radius: 50%; box-shadow: 0 0 4px #aaa; }
+        .power { background: #ffeb3b; border-radius: 50%; box-shadow: 0 0 8px #ffeb3b; }
+        .pacman { background: #ffb300; border-radius: 50%; border: 2px solid #ff9800; }
+        .ghost { background: #e53935; border-radius: 50%; border: 2px solid #b71c1c; }
+        #buffer { max-height: 200px; overflow-y: auto; background: #fff; border: 1px solid #ccc; margin: 10px; font-size: 10px; }
+        #stats { margin: 10px; }
+        .policy-arrow { position: absolute; font-size: 20px; color: #1976d2; pointer-events: none; z-index: 10; }
+        .param-group { margin: 10px; padding: 10px; background: #f9f9f9; border-radius: 8px; border: 1px solid #ccc; }
+        .objective-indicator { font-weight: bold; font-size: 16px; margin: 5px; padding: 8px; border-radius: 5px; }
+        .objective-0 { background: #ffcdd2; color: #d32f2f; }
+        .objective-1 { background: #c8e6c9; color: #388e3c; }
+        .objective-2 { background: #bbdefb; color: #1976d2; }
+        .model-controls { display: flex; gap: 10px; margin: 10px; flex-wrap: wrap; }
+        .model-control { padding: 5px; border: 1px solid #ccc; border-radius: 5px; background: #fff; }
+        .network-inputs { margin: 10px; padding: 10px; background: #e8f5e8; border-radius: 8px; border: 1px solid #4caf50; max-width: 800px; }
+        .input-section { margin: 5px 0; }
+        .input-values { font-family: monospace; font-size: 12px; background: #f0f0f0; padding: 5px; border-radius: 3px; }
+        .individual-training { margin: 10px; padding: 10px; background: #fff3e0; border-radius: 8px; border: 1px solid #ff9800; }
+        .train-button { margin: 3px; padding: 5px 10px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .train-model1 { background: #ffcdd2; color: #d32f2f; }
+        .train-model2 { background: #c8e6c9; color: #388e3c; }
+        .train-model3 { background: #bbdefb; color: #1976d2; }
+    </style>
+</head>
+<body>
+    <h1>Pac-Man Hierarchical DQN - 3 Models</h1>
+    
+    <div class="param-group">
+        <b>DQN Parameters:</b><br>
+        Learning Rate: <input id="lr" type="number" value="0.0005" min="0.0001" max="0.01" step="0.0001" style="width:80px;">
+        Batch Size: <input id="batchSize" type="number" value="64" min="16" max="256" style="width:60px;">
+        Buffer Size: <input id="bufferSize" type="number" value="10000" min="1000" max="50000" style="width:80px;">
+        Hidden Units: <input id="hiddenUnits" type="number" value="64" min="16" max="256" style="width:60px;">
+        <br><br>
+        Epsilon Start: <input id="epsStart" type="number" value="1.0" min="0" max="1" step="0.01" style="width:60px;">
+        Epsilon Min: <input id="epsMin" type="number" value="0.01" min="0" max="1" step="0.01" style="width:60px;">
+        Epsilon Decay: <input id="epsDecay" type="number" value="0.99" min="0.9" max="1" step="0.001" style="width:60px;">
+        <br><br>
+        Gamma: <input id="gamma" type="number" value="0.99" min="0.8" max="1" step="0.01" style="width:60px;">
+        Tau: <input id="tau" type="number" value="0.001" min="0.0001" max="0.1" step="0.0001" style="width:60px;">
+        Update Every: <input id="updateEvery" type="number" value="4" min="1" max="20" style="width:60px;">
+        Max Steps: <input id="maxSteps" type="number" value="300" min="100" max="1000" style="width:60px;">
+        <br><br>
+        Training Episodes: <input id="fastEpisodes" type="number" value="5000" min="100" max="50000" style="width:70px;">
+    </div>
+    
+    <div id="objectiveIndicator" class="objective-indicator objective-0">Current Objective: Eat First Power Pellet (Model 1)</div>
+    
+    <div style="margin: 10px; padding: 8px; background: #fff; border-radius: 5px; border: 1px solid #ccc; font-size: 14px;">
+        <b>🎯 Hierarchical Training Objectives:</b><br>
+        <span style="color: #d32f2f;">Model 1 → Collecting first power pellet</span> | 
+        <span style="color: #388e3c;">Model 2 → Collecting second power pellet</span> | 
+        <span style="color: #1976d2;">Model 3 → Hunt ghost (powered up)</span>
+    </div>
+    
+    <div style="margin: 10px; text-align: center;">
+        <button id="resetBtn" style="margin: 5px; padding: 8px 16px; background: #f44336; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">🔄 Reset All</button>
+        <button id="showInputsBtn" style="margin: 5px; padding: 8px 16px; background: #2196f3; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">🧠 Show Network Inputs</button>
+    </div>
+    
+    <div class="individual-training">
+        <b>🎯 Individual Model Training:</b><br>
+        <button class="train-button train-model1" id="trainModel1">Train Model 1 Only (First Power Pellet)</button>
+        <button class="train-button train-model2" id="trainModel2">Train Model 2 Only (Second Power Pellet)</button>
+        <button class="train-button train-model3" id="trainModel3">Train Model 3 Only (Eat Ghost)</button>
+        <br><br>
+        <button class="train-button train-model1" id="testModel1">Test Model 1</button>
+        <button class="train-button train-model2" id="testModel2">Test Model 2</button>
+        <button class="train-button train-model3" id="testModel3">Test Model 3</button>
+        <br><br>
+        <!-- Setup buttons hidden -->
+    </div>
+    
+    <div class="model-controls">
+        <div class="model-control">
+            <b>Model 1 (First Power Pellet):</b><br>
+            <button id="saveModel1">Save Model 1</button>
+            <input type="file" id="loadModel1" accept=".json,.bin" multiple>
+        </div>
+        <div class="model-control">
+            <b>Model 2 (Second Power Pellet):</b><br>
+            <button id="saveModel2">Save Model 2</button>
+            <input type="file" id="loadModel2" accept=".json,.bin" multiple>
+        </div>
+        <div class="model-control">
+            <b>Model 3 (Eat Ghost):</b><br>
+            <button id="saveModel3">Save Model 3</button>
+            <input type="file" id="loadModel3" accept=".json,.bin" multiple>
+        </div>
+    </div>
+    
+    <div class="model-controls">
+        <button id="saveAllModels">Save All Models</button>
+        <button id="trainAllModels">Train All Models (2000 each)</button>
+        <button id="testHierarchicalChain">🔗 Test Full Hierarchical Chain</button>
+    </div>
+    
+    <div id="stats"></div>
+    <div id="powerPelletCounter" style="margin:5px; font-weight:bold; color:#ffb300;"></div>
+    
+    <div id="rewardStats" style="margin:10px; padding:10px; background:#e3f2fd; border-radius:8px; border:1px solid #2196f3; font-family:monospace; font-size:12px; max-height:150px; overflow-y:auto;">
+        <b>📊 Average Reward per 100 Episodes:</b> 
+        <button onclick="rewardHistory=[[], [], []]; currentBatchRewards=[[], [], []]; updateRewardDisplay();" style="font-size:10px; padding:2px 5px; margin-left:10px; background:#ff5722; color:white; border:none; border-radius:3px; cursor:pointer;">Clear History</button>
+        <br>
+        <div id="rewardDisplay">No training data yet...</div>
+    </div>
+    
+    <div id="networkInputs" class="network-inputs" style="display:none;">
+        <b>🧠 Network Inputs (105 total values):</b>
+        <div class="input-section">
+            <b>Position Data (4 values):</b>
+            <div class="input-values" id="positionInputs"></div>
+        </div>
+        <div class="input-section">
+            <b>Grid Map (100 values - 10x10 grid):</b>
+            <div class="input-values" id="gridInputs"></div>
+        </div>
+        <div class="input-section">
+            <b>Game State (1 value):</b>
+            <div class="input-values" id="gameStateInputs"></div>
+        </div>
+    </div>
+    
+
+    
+    <div id="progressContainer" style="width: 400px; height: 25px; background: #eee; border-radius: 10px; margin: 10px; display: none;">
+        <div id="progressBar" style="height: 100%; width: 0; background: #4caf50; border-radius: 10px; position: relative;">
+            <div id="progressText" style="position: absolute; width: 100%; text-align: center; line-height: 25px; color: #333; font-size: 12px;"></div>
+        </div>
+    </div>
+    
+    <div id="grid"></div>
+    <div id="buffer"></div>
+    <div id="policyDiv"></div>
+    
+    <div style="font-size: 12px; color: #666; margin: 15px; max-width: 600px; text-align: center;">
+        <b>Hierarchical DQN with 3 Models:</b><br>
+        Model 1: Learns to eat the first power pellet<br>
+        Model 2: Learns to eat the second power pellet<br>
+        Model 3: Learns to eat the ghost after collecting both power pellets<br>
+        Each model has its own experience replay buffer and target network.
+    </div>
+    
+    <script src="environment.js"></script>
+    <script src="agent.js"></script>
+    <script>
+    tf.setBackend('webgl');
+    let env, agent;
+    const CELL_SIZE = 48;
+    const CELL_GAP = 2;
+    let episode = 0, bestScore = 0;
+    let policyArrows = [];
+    
+    // Reward tracking for each model
+    let rewardHistory = [[], [], []]; // Model 1, Model 2, Model 3
+    let currentBatchRewards = [[], [], []]; // Current batch of rewards for each model
+
+    // Buffers of end states for curriculum transfer between models
+    let endStateBuffers = [[], [], []];
+
+    // Snapshots captured after each test run to use as starting states for next model's training
+    let initialStates = [null, null, null];
+
+    function clearPolicyArrows() {
+        policyArrows.forEach(el => el.remove());
+        policyArrows = [];
+    }
+
+    function updateRewardDisplay() {
+        const rewardDisplay = document.getElementById('rewardDisplay');
+        if (rewardHistory[0].length === 0 && rewardHistory[1].length === 0 && rewardHistory[2].length === 0) {
+            rewardDisplay.innerHTML = 'No training data yet...';
+            return;
+        }
+        
+        let html = '';
+        const modelNames = ['Model 1 (First Power)', 'Model 2 (Second Power)', 'Model 3 (Hunt Ghost)'];
+        const colors = ['#d32f2f', '#388e3c', '#1976d2'];
+        
+        for (let modelIdx = 0; modelIdx < 3; modelIdx++) {
+            if (rewardHistory[modelIdx].length > 0) {
+                html += `<div style="color: ${colors[modelIdx]}; margin: 3px 0;">`;
+                html += `<b>${modelNames[modelIdx]}:</b><br>`;
+                
+                for (let i = 0; i < rewardHistory[modelIdx].length; i++) {
+                    const episodeRange = `${(i * 100) + 1}-${(i + 1) * 100}`;
+                    const avgReward = rewardHistory[modelIdx][i].toFixed(2);
+                    html += `Episodes ${episodeRange}: ${avgReward} | `;
+                }
+                html += '<br>';
+                
+                if (rewardHistory[modelIdx].length > 0) {
+                    const latestAvg = rewardHistory[modelIdx][rewardHistory[modelIdx].length - 1];
+                    const improvement = rewardHistory[modelIdx].length > 1 ? 
+                        (latestAvg - rewardHistory[modelIdx][rewardHistory[modelIdx].length - 2]).toFixed(2) : 'N/A';
+                    // NEW: 5-block moving average (up to last 500 episodes)
+                    const windowSize = 5;
+                    const startIdx = Math.max(0, rewardHistory[modelIdx].length - windowSize);
+                    const windowVals = rewardHistory[modelIdx].slice(startIdx);
+                    const ma = windowVals.reduce((a,b)=>a+b,0) / windowVals.length;
+                    html += `<small>Latest: ${latestAvg.toFixed(2)} | Improvement: ${improvement} | 5-block MA: ${ma.toFixed(2)}</small>`;
+                }
+                html += '</div>';
+            }
+        }
+        
+        rewardDisplay.innerHTML = html;
+    }
+
+    function updateObjectiveIndicator() {
+        const objective = agent.getCurrentObjective();
+        const indicator = document.getElementById('objectiveIndicator');
+        const objectives = [
+            { text: 'Eat First Power Pellet (Model 1)', class: 'objective-0' },
+            { text: 'Eat Second Power Pellet (Model 2)', class: 'objective-1' },
+            { text: 'Eat the Ghost (Model 3)', class: 'objective-2' }
+        ];
+        
+        indicator.textContent = `Current Objective: ${objectives[objective].text}`;
+        indicator.className = `objective-indicator ${objectives[objective].class}`;
+    }
+
+    function displayNetworkInputs() {
+        const state = env.getState();
+        const networkInputs = document.getElementById('networkInputs');
+        
+        // Position data (first 4 values)
+        document.getElementById('positionInputs').textContent = 
+            `Pacman: (${state[0]}, ${state[1]}) | Ghost: (${state[2]}, ${state[3]})`;
+        
+        // Grid map (values 4-103, showing as 10x10 grid)
+        const gridMap = state.slice(4, 104);
+        let gridDisplay = '';
+        for (let y = 0; y < 10; y++) {
+            for (let x = 0; x < 10; x++) {
+                const value = gridMap[y * 10 + x];
+                gridDisplay += value;
+            }
+            gridDisplay += '\n';
+        }
+        document.getElementById('gridInputs').textContent = 
+            `Grid (0=empty, 1=pellet, 2=power pellet):\n${gridDisplay}`;
+        
+        // Game state (last value)
+        document.getElementById('gameStateInputs').textContent = 
+            `Power Pellets Eaten: ${state[104]}`;
+        
+        networkInputs.style.display = networkInputs.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function setupEnvironmentForModel(modelNumber) {
+        env.reset();
+        const mid = Math.floor(env.gridSize/2);
+        
+        if (modelNumber === 1) {
+            // Model 1: Standard setup - learn to get first power pellet
+            // Agent starts at (1, 1) - default position
+            // Ghost starts at opposite corner (8, 8)
+            console.log("Setup for Model 1: Agent at (1,1), Ghost at (8,8), learn to eat first power pellet");
+            
+        } else if (modelNumber === 2) {
+            // Model 2: First power pellet already eaten, agent starts where first pellet was
+            env.powerPelletsEaten = 1;
+            env.grid[mid][mid] = 0; // Remove center power pellet (simulate already eaten)
+            
+            // CRITICAL: Agent starts at the position where first power pellet was collected
+            env.pacman.x = mid;
+            env.pacman.y = mid;
+            
+            // Ghost should be closer now, having chased the agent
+            env.ghost.x = mid + 2;
+            env.ghost.y = mid + 1;
+            // Keep ghost within bounds
+            env.ghost.x = Math.min(env.gridSize - 1, env.ghost.x);
+            env.ghost.y = Math.min(env.gridSize - 1, env.ghost.y);
+            
+            console.log(`Setup for Model 2: Agent at (${mid},${mid}), Ghost at (${env.ghost.x},${env.ghost.y}), first power pellet eaten, learn to get second`);
+            
+        } else if (modelNumber === 3) {
+            // Model 3: Both power pellets eaten, agent starts where second pellet was
+            env.powerPelletsEaten = 2;
+            env.powerTimer = 999; // Unlimited power (will last until ghost is caught)
+            env.collectedAllPowerPellets = true;
+            env.score = 12000; // Start with base score since previous objectives completed
+            env.grid[mid][mid] = 0; // Remove first power pellet (center)
+            env.grid[1][env.gridSize-2] = 0; // Remove second power pellet (8, 1)
+            
+            // CRITICAL: Agent starts at the position where second power pellet was collected (8,1)
+            env.pacman.x = env.gridSize-2;
+            env.pacman.y = 1;
+            
+            // Place ghost FAR from agent with MINIMUM distance of 6-8 for realistic training
+            const teleporters = [[mid, 0], [mid, env.gridSize-1], [0, mid], [env.gridSize-1, mid]];
+            let validGhostPositions = [];
+            
+            // Find all valid positions at least 6 cells away from Pac-Man
+            for (let y = 0; y < env.gridSize; y++) {
+                for (let x = 0; x < env.gridSize; x++) {
+                    if (env.grid[y][x] === 1) continue; // Skip walls
+                    const distance = Math.abs(x - env.pacman.x) + Math.abs(y - env.pacman.y);
+                    if (distance >= 6) {
+                        // Prefer positions near teleporters to encourage teleporter usage
+                        const nearTeleporter = teleporters.some(([tx, ty]) => 
+                            Math.abs(x - tx) + Math.abs(y - ty) <= 2);
+                        if (nearTeleporter) {
+                            validGhostPositions.push([x, y, distance]);
+                        }
+                    }
+                }
+            }
+            
+            // If we have positions near teleporters, use one of those
+            if (validGhostPositions.length > 0) {
+                const chosen = validGhostPositions[Math.floor(Math.random() * validGhostPositions.length)];
+                env.ghost.x = chosen[0];
+                env.ghost.y = chosen[1];
+                console.log(`Ghost placed at (${env.ghost.x},${env.ghost.y}), distance: ${chosen[2]}, near teleporter`);
+            } else {
+                // Fallback: place ghost at opposite corner
+                env.ghost.x = 2;
+                env.ghost.y = env.gridSize - 2;
+                console.log(`Ghost placed at fallback position (${env.ghost.x},${env.ghost.y})`);
+            }
+            
+            console.log(`Setup for Model 3: Agent at (${env.pacman.x},${env.pacman.y}), Ghost at (${env.ghost.x},${env.ghost.y}), both power pellets eaten, powered up indefinitely, hunt ghost`);
+        }
+        
+        // Clear the cell where pacman is positioned
+        env.grid[env.pacman.y][env.pacman.x] = 0;
+    }
+
+    function setupForModel(modelNumber, preserveAgent = true) {
+        setupEnvironmentForModel(modelNumber);
+        
+        updateObjectiveIndicator();
+        renderGrid();
+        renderBuffer();
+        
+        // Only reset agent if explicitly requested (for training)
+        if (!preserveAgent) {
+            setupEnvAgent();
+        }
+    }
+
+    async function trainSpecificModel(modelNumber, episodes = 1000) {
+        console.log(`Training Model ${modelNumber} for ${episodes} episodes`);
+        
+        // For Model 2, ensure we have Model 1's ending state first (if available)
+        if (modelNumber === 2 && !initialStates[1]) {
+            console.log("Model 2 training would benefit from Model 1's ending state. Running Model 1 test first...");
+            alert("Model 2 training would benefit from Model 1's ending state. Running Model 1 test first...");
+            await testSpecificModel(1);
+        }
+        
+        // For Model 3, ensure we have Model 2's ending state first
+        if (modelNumber === 3 && !initialStates[2]) {
+            console.log("🔗 Model 3 training requires Model 2's ending state. Running Model 2 test first...");
+            alert("Model 3 training requires Model 2's ending state. Running Model 2 test first...");
+            await testSpecificModel(2);
+            if (!initialStates[2]) {
+                alert("❌ Failed to generate Model 2 ending state. Cannot train Model 3.");
+                return;
+            }
+            console.log("✅ Model 2 ending state captured successfully. Model 3 training will use EXACT Model 2 ending state.");
+        }
+        
+        let t0 = performance.now();
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        progressContainer.style.display = 'block';
+        progressBar.style.width = '0';
+        
+        let successCount = 0;
+        let stepCount = 0;
+        const modelIdx = modelNumber - 1;
+        
+        // Clear previous reward tracking for this model
+        currentBatchRewards[modelIdx] = [];
+        
+        // Save snapshot to restore board after training
+        const preTrainSnap = env.getState();
+        
+        for (let i = 0; i < episodes; i++) {
+            // For models 2 and 3, ALWAYS start from realistic end-states of previous objective
+            // Note: initialStates[1] = Model 1's ending state, initialStates[2] = Model 2's ending state
+            if (initialStates[modelIdx]) {
+                // Use EXACT ending state from previous model
+                env.setFromState(initialStates[modelIdx]);
+                
+                // For Model 3: Restore power state exactly as Model 2 ended
+                if (modelNumber === 3) {
+                    env.powerTimer = 999; // Ensure unlimited power for ghost hunting
+                    env.collectedAllPowerPellets = true;
+                    // Don't modify score - keep exactly what Model 2 achieved
+                }
+                
+                if (i === 0) { // Log only first episode to avoid spam
+                    console.log(`✅ Model ${modelNumber} Episode ${i+1}: Starting from EXACT Model ${modelNumber-1} ending state:`);
+                    console.log(`   Agent: (${env.pacman.x}, ${env.pacman.y}), Ghost: (${env.ghost.x}, ${env.ghost.y})`);
+                    console.log(`   Power Pellets: ${env.powerPelletsEaten}, Score: ${env.score}, Power Timer: ${env.powerTimer}`);
+                }
+            } else {
+                // This should only happen for Model 1 or if previous test wasn't run
+                setupEnvironmentForModel(modelNumber);
+                if (i === 0) { // Log only first episode to avoid spam
+                    console.log(`⚠️ Model ${modelNumber} Episode ${i+1}: FALLBACK to hardcoded setup (missing previous model's end state)`);
+                    console.log(`   Agent: (${env.pacman.x}, ${env.pacman.y}), Ghost: (${env.ghost.x}, ${env.ghost.y})`);
+                    console.log(`   Power Pellets: ${env.powerPelletsEaten}, Score: ${env.score}`);
+                }
+            }
+            let state = env.getState();
+            let done = false;
+            let episodeReward = 0;
+            
+            while (!done) {
+                // Force the agent to use the specific model
+                const originalGetCurrentObjective = agent.getCurrentObjective;
+                agent.getCurrentObjective = () => modelNumber - 1;
+                
+                const action = agent.act(state);
+                const { nextState, reward, done: isDone } = env.step(action);
+                
+                // Only store experience for the specific model
+                agent.replayBuffers[modelNumber - 1].push([state, action, reward, nextState, isDone]);
+                if (agent.replayBuffers[modelNumber - 1].length > agent.bufferSize) {
+                    agent.replayBuffers[modelNumber - 1].shift();
+                }
+                
+                stepCount++;
+                if (stepCount % agent.replayFreq === 0) {
+                    await agent.replay(modelNumber - 1);
+                }
+                
+                state = nextState;
+                done = isDone;
+                episodeReward += reward;
+                
+                // Check success condition for each model - END EPISODE IMMEDIATELY ON SUCCESS
+                if (modelNumber === 1 && env.powerPelletsEaten >= 1) {
+                    successCount++;
+                    // store state for Model 2 starts
+                    if (modelNumber === 1) endStateBuffers[1].push(env.getState());
+                    console.log(`Model 1 SUCCESS: Power pellet collected at step ${env.steps}`);
+                    done = true; // End episode immediately on success
+                    break;
+                } else if (modelNumber === 2 && env.powerPelletsEaten >= 2) {
+                    successCount++;
+                    // store state for Model 3 starts
+                    if (modelNumber === 2) endStateBuffers[2].push(env.getState());
+                    console.log(`Model 2 SUCCESS: Second power pellet collected at step ${env.steps}`);
+                    done = true; // End episode immediately on success
+                    break;
+                } else if (modelNumber === 3 && env.ghostCaught) {
+                    successCount++;
+                    console.log(`🎉 Model 3 SUCCESS: Ghost caught at step ${env.steps}, score: ${env.score}`);
+                    done = true; // End episode immediately on success
+                    break;
+                }
+                
+                // Restore original function
+                agent.getCurrentObjective = originalGetCurrentObjective;
+            }
+            
+            // Debug: Log episode end details for Model 3
+            if (modelNumber === 3) {
+                const endReason = env.steps >= env.maxSteps ? "TIMEOUT" : 
+                                 env.stationaryCount > 20 ? "STATIONARY" : 
+                                 env.ghostCaught ? "GHOST_CAUGHT" : "OTHER";
+                console.log(`Model 3 Episode ${i+1} ended: ${endReason}, steps: ${env.steps}, ghostCaught: ${env.ghostCaught}, score: ${env.score}, reward: ${episodeReward.toFixed(2)}`);
+            }
+            
+            // Track episode reward
+            currentBatchRewards[modelIdx].push(episodeReward);
+            
+            // Every 100 episodes, calculate and display average reward
+            if ((i + 1) % 100 === 0) {
+                const avgReward = currentBatchRewards[modelIdx].reduce((sum, r) => sum + r, 0) / currentBatchRewards[modelIdx].length;
+                rewardHistory[modelIdx].push(avgReward);
+                
+                console.log(`Model ${modelNumber} - Episodes ${i + 1 - 99}-${i + 1}: Average Reward = ${avgReward.toFixed(2)}`);
+                
+                // Update display
+                updateRewardDisplay();
+                
+                // Clear current batch
+                currentBatchRewards[modelIdx] = [];
+            }
+            
+            episode++;
+            if (i % 50 === 0 || i === episodes - 1) {
+                const progress = ((i+1)/episodes*100);
+                progressBar.style.width = progress + '%';
+                progressText.textContent = `Model ${modelNumber}: ${i+1}/${episodes} (${progress.toFixed(1)}%) Success: ${successCount}`;
+                await new Promise(resolve => setTimeout(resolve, 1));
+            }
+        }
+        
+        // Handle any remaining rewards if not exactly divisible by 100
+        if (currentBatchRewards[modelIdx].length > 0) {
+            const avgReward = currentBatchRewards[modelIdx].reduce((sum, r) => sum + r, 0) / currentBatchRewards[modelIdx].length;
+            rewardHistory[modelIdx].push(avgReward);
+            updateRewardDisplay();
+        }
+        
+        let t1 = performance.now();
+        progressContainer.style.display = 'none';
+        
+        const successRate = (successCount / episodes * 100).toFixed(1);
+        alert(`Model ${modelNumber} training complete!\nTime: ${((t1-t0)/1000).toFixed(2)}s\nSuccess Rate: ${successRate}%\nSuccesses: ${successCount}/${episodes}`);
+        
+        // Restore pre-training board snapshot so UI shows state prior to training
+        env.setFromState(preTrainSnap);
+        if (modelNumber === 3) env.powerTimer = 999;
+        updateObjectiveIndicator();
+        renderGrid();
+        renderBuffer();
+    }
+
+    async function testSpecificModel(modelNumber) {
+        console.log(`Testing Model ${modelNumber}`);
+        
+        // Restore environment snapshot if we have one to avoid resetting pellets
+        const snap = initialStates[modelNumber-1];
+        if (snap) {
+            env.setFromState(snap);
+            if (modelNumber === 3) env.powerTimer = 999;
+        } else {
+            setupForModel(modelNumber, true);
+        }
+        
+        // Force agent to use specific model
+        const originalGetCurrentObjective = agent.getCurrentObjective;
+        agent.getCurrentObjective = () => modelNumber - 1;
+        
+        const oldEpsilon = agent.epsilon;
+        agent.epsilon = 0; // No exploration during test
+        
+        console.log(`Testing Model ${modelNumber} - Epsilon set to 0 for pure exploitation`);
+        
+        // Show initial Q-values for debugging
+        const state = env.getState();
+        const stateTensor = tf.tensor2d([state]);
+        const modelIndex = modelNumber - 1;
+        const qValues = await agent.models[modelIndex].predict(stateTensor).array();
+        console.log(`Model ${modelNumber} Q-values at start:`, qValues[0]);
+        console.log(`Best action: ${['Up', 'Down', 'Left', 'Right'][qValues[0].indexOf(Math.max(...qValues[0]))]}`)
+        stateTensor.dispose();
+        
+        env.setDemoMode(true);
+        await agent.play(renderGrid, renderBuffer, () => {
+            updateStats();
+            updateObjectiveIndicator();
+        }, false); // Don't reset environment - preserve the setup for this model
+        env.setDemoMode(false);
+        
+        // Save EXACT ending state for next model training
+        if (modelNumber < 3) {
+            initialStates[modelNumber] = env.getState();
+            console.log(`💾 Model ${modelNumber} ending state saved for Model ${modelNumber + 1} training:`);
+            console.log(`   Agent: (${env.pacman.x}, ${env.pacman.y}), Ghost: (${env.ghost.x}, ${env.ghost.y})`);
+            console.log(`   Power Pellets: ${env.powerPelletsEaten}, Score: ${env.score}, Power Timer: ${env.powerTimer}`);
+            console.log(`   Collected All Power Pellets: ${env.collectedAllPowerPellets}`);
+        }
+
+        // Restore
+        agent.getCurrentObjective = originalGetCurrentObjective;
+        agent.epsilon = oldEpsilon;
+        
+        console.log(`Test complete. Epsilon restored to ${oldEpsilon}`);
+        updateObjectiveIndicator();
+    }
+
+    async function testHierarchicalChain() {
+        console.log("🔗 Testing Full Hierarchical Chain");
+        
+        if (!confirm("This will test the full hierarchical system:\n1. Model 1: Get first power pellet\n2. Model 2: Get second power pellet\n3. Model 3: Hunt ghost\n\nContinue?")) {
+            return;
+        }
+        
+        const oldEpsilon = agent.epsilon;
+        agent.epsilon = 0; // No exploration during test
+        
+        // Model 1: Get first power pellet
+        alert("Testing Model 1: Getting first power pellet from (1,1)");
+        setupForModel(1, true);
+        console.log(`Model 1 start: Agent at (${env.pacman.x}, ${env.pacman.y}), Ghost at (${env.ghost.x}, ${env.ghost.y})`);
+        
+        const originalGetCurrentObjective = agent.getCurrentObjective;
+        agent.getCurrentObjective = () => 0; // Force Model 1
+        
+        env.setDemoMode(true);
+        await agent.play(renderGrid, renderBuffer, () => {
+            updateStats();
+            updateObjectiveIndicator();
+        }, false);
+        env.setDemoMode(false);
+        
+        const model1Result = {
+            powerPellets: env.powerPelletsEaten,
+            agentPos: [env.pacman.x, env.pacman.y],
+            ghostPos: [env.ghost.x, env.ghost.y],
+            score: env.score
+        };
+        
+        console.log("Model 1 result:", model1Result);
+        
+        // Clear episode done flag and step counter before next stage
+        env.done = false;
+        env.steps = 0;
+        
+        // Model 2: Get second power pellet
+        alert(`Model 1 finished! Agent at (${env.pacman.x}, ${env.pacman.y})\nNow testing Model 2: Getting second power pellet`);
+        // Do NOT reset environment – continue from where Model 1 ended
+        console.log(`Model 2 start (continuing): Agent at (${env.pacman.x}, ${env.pacman.y}), Ghost at (${env.ghost.x}, ${env.ghost.y})`);
+        
+        agent.getCurrentObjective = () => 1; // Force Model 2
+        
+        env.setDemoMode(true);
+        await agent.play(renderGrid, renderBuffer, () => {
+            updateStats();
+            updateObjectiveIndicator();
+        }, false);
+        env.setDemoMode(false);
+        
+        const model2Result = {
+            powerPellets: env.powerPelletsEaten,
+            agentPos: [env.pacman.x, env.pacman.y],
+            ghostPos: [env.ghost.x, env.ghost.y],
+            score: env.score,
+            powerTimer: env.powerTimer
+        };
+        
+        console.log("Model 2 result:", model2Result);
+        
+        // Clear episode done flag and step counter before next stage
+        env.done = false;
+        env.steps = 0;
+        
+        // Model 3: Hunt ghost (starting from where Model 2 ended)
+        alert(`Model 2 finished! Agent at (${env.pacman.x}, ${env.pacman.y})\nNow testing Model 3: Hunting ghost (powered up)`);
+        // Ensure Pac-Man has plenty of power time
+        env.powerTimer = 999;
+        console.log(`Model 3 start (continuing): Agent at (${env.pacman.x}, ${env.pacman.y}), Ghost at (${env.ghost.x}, ${env.ghost.y}), Power Timer reset to ${env.powerTimer}`);
+        
+        agent.getCurrentObjective = () => 2; // Force Model 3
+        
+        env.setDemoMode(true);
+        await agent.play(renderGrid, renderBuffer, () => {
+            updateStats();
+            updateObjectiveIndicator();
+        }, false);
+        env.setDemoMode(false);
+        
+        const model3Result = {
+            powerPellets: env.powerPelletsEaten,
+            agentPos: [env.pacman.x, env.pacman.y],
+            ghostPos: [env.ghost.x, env.ghost.y],
+            score: env.score,
+            powerTimer: env.powerTimer,
+            victory: env.ghostCaught || env.score >= 15000
+        };
+        
+        console.log("Model 3 result:", model3Result);
+        
+        // Restore
+        agent.getCurrentObjective = originalGetCurrentObjective;
+        agent.epsilon = oldEpsilon;
+        updateObjectiveIndicator();
+        
+        // Show final results
+        const summary = `
+Hierarchical Chain Test Results:
+Model 1: ${model1Result.powerPellets >= 1 ? '✅ Success' : '❌ Failed'} - Got first power pellet
+Model 2: ${model2Result.powerPellets >= 2 ? '✅ Success' : '❌ Failed'} - Got second power pellet  
+Model 3: ${model3Result.victory ? '✅ Success' : '❌ Failed'} - ${model3Result.victory ? 'Caught ghost!' : 'Failed to catch ghost'}
+Final Score: ${model3Result.score}
+        `;
+        
+        alert(summary);
+        console.log(summary);
+    }
+
+    function setupEnvAgent() {
+        const lr = parseFloat(document.getElementById('lr').value);
+        const batchSize = parseInt(document.getElementById('batchSize').value);
+        const epsStart = parseFloat(document.getElementById('epsStart').value);
+        const epsMin = parseFloat(document.getElementById('epsMin').value);
+        const epsDecay = parseFloat(document.getElementById('epsDecay').value);
+        const gamma = parseFloat(document.getElementById('gamma').value);
+        const tau = parseFloat(document.getElementById('tau').value);
+        const updateEvery = parseInt(document.getElementById('updateEvery').value);
+        const bufferSize = parseInt(document.getElementById('bufferSize').value);
+        const hiddenUnits = parseInt(document.getElementById('hiddenUnits').value);
+        const maxSteps = parseInt(document.getElementById('maxSteps').value);
+        
+        env = new PacmanGridEnvironment(10);
+        env.maxSteps = maxSteps;
+        
+        agent = new PacmanHierarchicalDQNAgent(env, bufferSize, batchSize, hiddenUnits);
+        agent.learningRate = lr;
+        agent.epsilon = epsStart;
+        agent.epsilonMin = epsMin;
+        agent.epsilonDecay = epsDecay;
+        agent.gamma = gamma;
+        agent.tau = tau;
+        agent.updateEvery = updateEvery;
+        
+        episode = 0;
+        bestScore = 0;
+        
+        // Reset reward tracking
+        rewardHistory = [[], [], []];
+        currentBatchRewards = [[], [], []];
+        updateRewardDisplay();
+        
+        updateStats();
+        updateObjectiveIndicator();
+        renderGrid();
+        renderBuffer();
+    }
+
+    function renderGrid() {
+        const gridDiv = document.getElementById('grid');
+        gridDiv.innerHTML = '';
+        gridDiv.style.gridTemplateColumns = `repeat(${env.gridSize}, ${CELL_SIZE}px)`;
+        gridDiv.style.gridTemplateRows = `repeat(${env.gridSize}, ${CELL_SIZE}px)`;
+        const mid = Math.floor(env.gridSize/2);
+        for (let y = 0; y < env.gridSize; y++) {
+            for (let x = 0; x < env.gridSize; x++) {
+                let cell = document.createElement('div');
+                cell.className = 'cell';
+                // Teleporter holes
+                if ((y === 0 && x === mid) || (y === env.gridSize-1 && x === mid) || (x === 0 && y === mid) || (x === env.gridSize-1 && y === mid)) {
+                    cell.style.background = '#b3e5fc';
+                    cell.style.border = '2px dashed #039be5';
+                }
+                if (env.grid[y][x] === 1) cell.classList.add('wall');
+                else if (env.grid[y][x] === 2) cell.classList.add('pellet');
+                else if (env.grid[y][x] === 3) cell.classList.add('power');
+                if (env.pacman.x === x && env.pacman.y === y) {
+                    cell.innerHTML = `<img src="../pictures/pacman.gif" style="width:100%;height:100%;object-fit:contain;">`;
+                    if (env.powerTimer>0){
+                        cell.style.filter='hue-rotate(90deg)'; // slight tint when powered
+                    } else {
+                        cell.style.filter='none';
+                    }
+                }
+                if (env.ghost.x === x && env.ghost.y === y){
+                    cell.textContent='👻';
+                    cell.style.display='flex';
+                    cell.style.justifyContent='center';
+                    cell.style.alignItems='center';
+                    cell.style.fontSize='36px';
+                }
+                gridDiv.appendChild(cell);
+            }
+        }
+        clearPolicyArrows();
+        document.getElementById('powerPelletCounter').textContent = `Power Pellets Collected: ${env.powerPelletsEaten} / 2 | Power Timer: ${env.powerTimer}`;
+    }
+
+    function renderBuffer() {
+        const bufferDiv = document.getElementById('buffer');
+        const objective = agent.getCurrentObjective();
+        const objectiveNames = ['First Power Pellet', 'Second Power Pellet', 'Eat Ghost'];
+        
+        bufferDiv.innerHTML = `<b>Experience Replay Buffer - ${objectiveNames[objective]} (Model ${objective + 1})</b><br>
+            <small>Buffer Size: ${agent.replayBuffers[objective].length} / ${agent.bufferSize}</small><br>
+            <table style="font-size:10px;width:100%"><tr><th>State</th><th>Action</th><th>Reward</th><th>Next State</th></tr>` +
+            agent.replayBuffers[objective].slice(-50).map(e => `<tr><td>[${e[0].slice(0,6)}...]</td><td>${e[1]}</td><td>${e[2].toFixed(2)}</td><td>[${e[3].slice(0,6)}...]</td></tr>`).join('') + '</table>';
+    }
+
+    function updateStats() {
+        const objective = agent.getCurrentObjective();
+        const objectiveNames = ['Model 1', 'Model 2', 'Model 3'];
+        document.getElementById('stats').innerHTML =
+            `Episode: ${episode} | Best Score: ${bestScore} | Current Score: ${env.score} | Epsilon: ${agent.epsilon.toFixed(3)} | Active: ${objectiveNames[objective]} | Steps: ${env.steps}`;
+    }
+
+
+
+    // Event Handlers
+    document.getElementById('resetBtn').onclick = () => {
+        if (confirm('Reset will lose all training progress. Are you sure?')) {
+            setupEnvAgent();
+        }
+    };
+
+
+
+
+
+
+
+
+
+
+
+
+
+    document.getElementById('showInputsBtn').onclick = displayNetworkInputs;
+
+    // Individual model training
+    document.getElementById('trainModel1').onclick = () => trainSpecificModel(1, parseInt(document.getElementById('fastEpisodes').value) || 1000);
+    document.getElementById('trainModel2').onclick = () => trainSpecificModel(2, parseInt(document.getElementById('fastEpisodes').value) || 1000);
+    document.getElementById('trainModel3').onclick = () => trainSpecificModel(3, parseInt(document.getElementById('fastEpisodes').value) || 1000);
+
+    // Individual model testing
+    document.getElementById('testModel1').onclick = () => testSpecificModel(1);
+    document.getElementById('testModel2').onclick = () => testSpecificModel(2);
+    document.getElementById('testModel3').onclick = () => testSpecificModel(3);
+
+    // Model saving and loading
+    document.getElementById('saveModel1').onclick = () => agent.saveModel(0);
+    document.getElementById('saveModel2').onclick = () => agent.saveModel(1);
+    document.getElementById('saveModel3').onclick = () => agent.saveModel(2);
+    document.getElementById('saveAllModels').onclick = () => agent.saveAllModels();
+
+    const handleModelUpload = (objective) => async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+        try {
+            await agent.loadModelFromFiles(objective, files);
+            alert(`Model ${objective + 1} loaded successfully!`);
+        } catch (err) {
+            console.error('Model load error', err);
+            alert('Failed to load model. Make sure you selected both the .json and .bin files.');
+        }
+    };
+
+    document.getElementById('loadModel1').onchange = handleModelUpload(0);
+    document.getElementById('loadModel2').onchange = handleModelUpload(1);
+    document.getElementById('loadModel3').onchange = handleModelUpload(2);
+
+    // Train all models sequentially
+    document.getElementById('trainAllModels').onclick = async () => {
+        if (!confirm('This will train each model for 2000 episodes. Continue?')) return;
+        
+        const originalEpisodes = parseInt(document.getElementById('fastEpisodes').value);
+        document.getElementById('fastEpisodes').value = '2000';
+        
+        for (let model = 0; model < 3; model++) {
+            alert(`Training Model ${model + 1}. Click OK to start.`);
+            
+            // Reset environment to focus on this model's objective
+            env.reset();
+            if (model === 1) {
+                // For model 2, set up environment with first power pellet already eaten
+                env.powerPelletsEaten = 1;
+                env.grid[5][5] = 0; // Remove center power pellet
+            } else if (model === 2) {
+                // For model 3, set up environment with both power pellets eaten
+                env.powerPelletsEaten = 2;
+                env.powerTimer = 10;
+                env.grid[5][5] = 0; // Remove center power pellet
+                env.grid[1][8] = 0; // Remove corner power pellet
+            }
+            
+            // Trigger fast training
+            document.getElementById('fastTrainBtn').click();
+            
+            // Wait for training to complete
+            await new Promise(resolve => {
+                const checkComplete = setInterval(() => {
+                    if (document.getElementById('progressContainer').style.display === 'none') {
+                        clearInterval(checkComplete);
+                        resolve();
+                    }
+                }, 1000);
+            });
+        }
+        
+        document.getElementById('fastEpisodes').value = originalEpisodes;
+        alert('All models trained! You can now save them for your class demonstration.');
+    };
+
+    // Test hierarchical chain
+    document.getElementById('testHierarchicalChain').onclick = testHierarchicalChain;
+
+    // Initial setup
+    setupEnvAgent();
+    </script>
+</body>
+</html> 
