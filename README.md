@@ -2,7 +2,7 @@
 
 This project implements three different reinforcement learning algorithms to solve escape room scenarios. Each algorithm is applied to a different environment with unique challenges and optimal parameters.
 
-credits: Alon Yamin , Haran Gidooni , Shahar Profeta
+credits: Alon Yamin , Haran Gidoni , Shahar Profeta
 
 ## Table of Contents
 1. [Dynamic Programming](#dynamic-programming)
